@@ -18,13 +18,13 @@
   "author": "Aaron Heckmann <aaron.heckmann+github@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "istanbul": "^0.4.2",
     "mongo-oplog": "^1.0.1"
   },
   "devDependencies": {
     "eslint": "^1.1.0",
     "eslint-config-pebble": "^1.2.0",
     "eslint-plugin-standard": "^1.1.0",
+    "istanbul": "^0.4.2",
     "mocha": "^2.4.5"
   },
   "eslintConfig": {
