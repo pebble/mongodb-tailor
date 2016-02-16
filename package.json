@@ -25,7 +25,8 @@
     "eslint-config-pebble": "^1.2.0",
     "eslint-plugin-standard": "^1.1.0",
     "istanbul": "^0.4.2",
-    "mocha": "^2.4.5"
+    "mocha": "^2.4.5",
+    "mongodb": "^2.1.7"
   },
   "eslintConfig": {
     "extends": [

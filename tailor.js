@@ -11,6 +11,7 @@ exports.tail = function createTail(config) {
 function Tail(config) {
   this.config = Tail.validate(config);
   this.DB_RGX = new RegExp(`^${this.config.db}\.`);
+  this.oplog = null;
   setImmediate(() => this._start());
 }
 
@@ -18,20 +19,14 @@ Tail.prototype = Object.create(Emitter.prototype);
 
 Tail.prototype._start = function _start() {
   const CONFIG = this.config;
-  const COLS = {};
+  const COLS = this.cols = {};
 
-  const oplog = createOplog(CONFIG.uri, {
-    db: {
-      readPreference: 'nearest'
-    },
+  const oplog = this.oplog = createOplog(CONFIG.uri, {
     ns: `${CONFIG.db}.*`
   });
 
   oplog.tail((err) => {
-    if (err) {
-      this.emit('error', err);
-      return;
-    }
+    if (err) return; // handled by oplog.on('error')
 
     // now that we're connected, obtain collections for queries
     CONFIG.collections.forEach(function(name) {
@@ -84,9 +79,20 @@ Tail.prototype._start = function _start() {
     this.emit('error', err);
   });
 
+  /*istanbul ignore next*/
   oplog.on('end', () => {
     this.emit('end');
   });
+};
+
+/**
+ * @param {Function} [fn]
+ * @api public
+ * @return undefined
+ */
+
+Tail.prototype.destroy = function destry(fn) {
+  if (this.oplog) this.oplog.destroy(fn);
 };
 
 Tail.prototype.colname = function colname(data) {
@@ -104,6 +110,7 @@ Tail.validate = function validate(config) {
   assert(config.db, 'missing db');
   assert(config.collections, 'missing collections');
   assert(Array.isArray(config.collections), 'collections must be an Array');
+  assert(config.collections.length > 0, 'must be at least 1 collection.');
   return config;
 };
 

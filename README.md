@@ -23,6 +23,10 @@ tail.on('error', console.error);
 tail.on('end', () => {
   console.log('tail ended');
 });
+
+setTimeout(() = {
+  tail.destroy(); // closes the stream
+}, 5000);
 ```
 
 ## Development
