@@ -1,8 +1,10 @@
+ENV_VARS := \
+	NODE_ENV=test
 
 test: mocha lint
 
 mocha:
-	@NODE_ENV=test ./node_modules/.bin/mocha $(MOCHA_OPTS)
+	@ $(ENV_VARS) ./node_modules/.bin/mocha $(MOCHA_OPTS)
 
 lint:
 	@ find . -name "*.js" \
@@ -10,21 +12,13 @@ lint:
 		-not -path "./coverage/*" -print0 | \
 		xargs -0 ./node_modules/eslint/bin/eslint.js
 
-test-cov: lint
-	@NODE_ENV=test node $(MOCHA_OPTS) \
+test-cov:
+	@ $(ENV_VARS) node $(V8_OPTIONS) \
 		node_modules/.bin/istanbul cover \
 		./node_modules/.bin/_mocha \
-		-- -u exports
+		-- --recursive $(MOCHA_OPTS)
 
 open-cov:
 	open coverage/lcov-report/index.html
 
-test-travis: lint
-	@NODE_ENV=test node $(MOCHA_OPTS) \
-		node_modules/.bin/istanbul cover \
-		./node_modules/.bin/_mocha \
-		--report lcovonly \
-		-- -u exports \
-		--bail
-
-.PHONY: test mocha lint test-cov open-cov test-travis
+.PHONY: test mocha lint test-cov open-cov

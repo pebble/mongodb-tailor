@@ -11,6 +11,8 @@ exports.tail = function createTail(config) {
 function Tail(config) {
   this.config = Tail.validate(config);
   this.DB_RGX = new RegExp(`^${this.config.db}\.`);
+  this.isWatchingAllCollections = Tail.isWatchingAllCollections(config);
+  this.oplog = null;
   setImmediate(() => this._start());
 }
 
@@ -18,20 +20,14 @@ Tail.prototype = Object.create(Emitter.prototype);
 
 Tail.prototype._start = function _start() {
   const CONFIG = this.config;
-  const COLS = {};
+  const COLS = this.cols = {};
 
-  const oplog = createOplog(CONFIG.uri, {
-    db: {
-      readPreference: 'nearest'
-    },
+  const oplog = this.oplog = createOplog(CONFIG.uri, {
     ns: `${CONFIG.db}.*`
   });
 
   oplog.tail((err) => {
-    if (err) {
-      this.emit('error', err);
-      return;
-    }
+    if (err) return; // handled by oplog.on('error')
 
     // now that we're connected, obtain collections for queries
     CONFIG.collections.forEach(function(name) {
@@ -41,19 +37,9 @@ Tail.prototype._start = function _start() {
     this.emit('connected');
   });
 
-  oplog.on('insert', (data) => {
-    if (!this.isWatched(data)) return;
-
-    // we receive the full doc on inserts. no lookup required
-    const payload = new Payload('insert', data.ns, data.ts, data.o);
-    this.emit('change', payload);
-  });
-
-  oplog.on('update', (data) => {
-    if (!this.isWatched(data)) return;
-
+  this.u = (data) => {
     if (!CONFIG.fullDoc) {
-      const payload = new Payload('update', data.ns, data.ts, new Update(data.o));
+      const payload = new Payload(data);
       this.emit('change', payload);
       return;
     }
@@ -66,17 +52,18 @@ Tail.prototype._start = function _start() {
         return;
       }
 
-      const update = new Update(data.o, doc);
-      const payload = new Payload('update', data.ns, data.ts, update);
+      const payload = new Payload(data, doc);
       this.emit('change', payload);
     });
-  });
+  };
 
-  oplog.on('delete', (data) => {
+  oplog.on('op', (data) => {
     if (!this.isWatched(data)) return;
 
-    // nothing to query, its been removed
-    const payload = new Payload('delete', data.ns, data.ts, data.o);
+    if (data.op === 'u') return this.u(data);
+
+    // generic events: insert, delete and collection actions like drop
+    const payload = new Payload(data);
     this.emit('change', payload);
   });
 
@@ -84,9 +71,20 @@ Tail.prototype._start = function _start() {
     this.emit('error', err);
   });
 
+  /* istanbul ignore next */
   oplog.on('end', () => {
     this.emit('end');
   });
+};
+
+/**
+ * @param {Function} [fn]
+ * @api public
+ * @return undefined
+ */
+
+Tail.prototype.destroy = function destry(fn) {
+  if (this.oplog) this.oplog.destroy(fn);
 };
 
 Tail.prototype.colname = function colname(data) {
@@ -94,8 +92,21 @@ Tail.prototype.colname = function colname(data) {
 };
 
 Tail.prototype.isWatched = function isWatched(data) {
+  if (this.isWatchingAllCollections) return true;
+
   const colname = this.colname(data);
-  return this.config.collections.some((name) => name === colname);
+  let watched = this.config.collections.some((name) => name === colname);
+  if (watched) return watched;
+
+  // collection actions eg drop, create, etc?
+
+  const cmdCollection = `${this.config.db}.$cmd`;
+  if (data.ns !== cmdCollection) return false;
+
+  let keys = Object.keys(data.o);
+  return this.config.collections.some((name) => {
+    return keys.some((key) => data.o[key] === name);
+  });
 };
 
 Tail.validate = function validate(config) {
@@ -103,19 +114,19 @@ Tail.validate = function validate(config) {
   assert(config.uri, 'missing uri');
   assert(config.db, 'missing db');
   assert(config.collections, 'missing collections');
+  if (typeof config.collections === 'string') {
+    config.collections = config.collections.split(',');
+  }
   assert(Array.isArray(config.collections), 'collections must be an Array');
+  assert(config.collections.length > 0, 'must be at least 1 collection.');
   return config;
 };
 
-/* eslint-disable max-params */
-function Payload(type, ns, ts, data) {
-  this.ts = ts;
-  this.ns = ns;
-  this.type = type;
-  this.data = data;
-}
+Tail.isWatchingAllCollections = function(config) {
+  return config.collections.some((name) => name === '*');
+};
 
-function Update(o, doc) {
-  this.o = o;
+function Payload(log, doc) {
+  this.log = log;
   this.doc = doc;
 }
