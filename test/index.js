@@ -9,11 +9,27 @@ assert(URI, 'missing MONGO_TEST_URI');
 
 const DB = 'test_mongo_tailor';
 const COL = 'testing';
+const COL_DROP = 'testing_dropped_col';
+
+function assertValidSchema(event, change) {
+  assert(change, 'missing change object');
+  assert(change.log, 'missing change.log');
+  assert(change.log.ts, 'missing change.log.ts');
+  assert(change.log.ns, 'missing change.log.ns');
+  assert(change.log.op, 'missing change.log.op');
+  assert(change.log.o, 'missing change.log.o');
+  assert.equal(change.log.op, event);
+
+  if (event === 'u') {
+    assert(change.log.o2, 'missing change.log.o2');
+  }
+}
 
 describe('tailor', function() {
   let db;
   let col;
   let col2;
+  let colDrop;
 
   before(function(done) {
     mongo.connect(URI, function(err, _db) {
@@ -91,16 +107,8 @@ describe('tailor', function() {
       o.once('connected', done);
     });
 
-    function assertValidSchema(change) {
-      assert(change, 'missing change object');
-      assert(change.ts, 'missing change.ts');
-      assert(change.ns, 'missing change.ns');
-      assert(change.type, 'missing change.type');
-      assert(change.data, 'missing change.data');
-    }
-
-    describe('`change` when a document is', function() {
-      it('removed', function(done) {
+    describe('`change` when', function() {
+      it('a document is removed', function(done) {
         let o = tailor.tail({
           uri: URI,
           db: DB,
@@ -111,16 +119,18 @@ describe('tailor', function() {
         o.once('connected', () => {
           let _id = `removed-${Math.random()}`;
           col.insertOne({ _id: _id }).then(() => {
-            o.once('change', (change) => {
-              assertValidSchema(change);
-              o.destroy(done);
-            });
-            col.deleteOne({ _id: _id }).catch(done);
+            setTimeout(function() {
+              o.once('change', (change) => {
+                assertValidSchema('d', change);
+                o.destroy(done);
+              });
+              col.deleteOne({ _id: _id }).catch(done);
+            }, 100);
           });
         });
       });
 
-      it('inserted', function(done) {
+      it('a document is inserted', function(done) {
         let o = tailor.tail({
           uri: URI,
           db: DB,
@@ -131,15 +141,15 @@ describe('tailor', function() {
         o.once('connected', () => {
           let _id = `inserted-${Math.random()}`;
           o.once('change', (change) => {
-            assert.equal(_id, change.data._id);
-            assertValidSchema(change);
+            assert.equal(_id, change.log.o._id);
+            assertValidSchema('i', change);
             o.destroy(done);
           });
           col.insertOne({ _id: _id }).catch(done);
         });
       });
 
-      it('updated', function(done) {
+      it('a document is updated', function(done) {
         let o = tailor.tail({
           uri: URI,
           db: DB,
@@ -189,9 +199,9 @@ describe('tailor', function() {
             });
 
             var fn = o.cols[COL].findOne;
-            o.cols[COL].findOne = function(match, fn) {
+            o.cols[COL].findOne = function(match, cb) {
               o.cols[COL].findOne = fn;
-              process.nextTick(() => fn(new Error('fail')));
+              process.nextTick(() => cb(new Error('fail')));
             };
 
             col.updateOne({ _id: _id }, {$set: { n: 3 }}).catch(done);
@@ -216,12 +226,13 @@ describe('tailor', function() {
           col.insertOne({ _id: _id, n: 0 }).then(() => {
             setTimeout(() => {
               o.once('change', (change) => {
-                assert.equal('update', change.type);
-                assert.equal(3, change.data.doc.n);
+                assertValidSchema('u', change);
+                assert(change.doc, 'missing change.log');
+                assert.equal(3, change.doc.n);
                 done();
               });
               col.updateOne({ _id: _id }, {$set: { n: 3 }}).catch(done);
-            }, 100);
+            }, 250);
           });
         });
       });
@@ -305,7 +316,7 @@ describe('tailor', function() {
         });
 
         col2.insertOne({ _id: _id }).then(() => {
-          col2.updateOne({ _id: _id }, { $inc: { x: 1 }}).then(() => {
+          col2.updateOne({ _id: _id }, { $inc: { x: 1 } }).then(() => {
             col2.deleteOne({ _id: _id }).catch(done).then(() => {
               setTimeout(() => finished(), 500);
             });

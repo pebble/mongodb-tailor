@@ -36,19 +36,9 @@ Tail.prototype._start = function _start() {
     this.emit('connected');
   });
 
-  oplog.on('insert', (data) => {
-    if (!this.isWatched(data)) return;
-
-    // we receive the full doc on inserts. no lookup required
-    const payload = new Payload('insert', data.ns, data.ts, data.o);
-    this.emit('change', payload);
-  });
-
-  oplog.on('update', (data) => {
-    if (!this.isWatched(data)) return;
-
+  this.u = (data) => {
     if (!CONFIG.fullDoc) {
-      const payload = new Payload('update', data.ns, data.ts, new Update(data.o));
+      const payload = new Payload(data);
       this.emit('change', payload);
       return;
     }
@@ -61,17 +51,18 @@ Tail.prototype._start = function _start() {
         return;
       }
 
-      const update = new Update(data.o, doc);
-      const payload = new Payload('update', data.ns, data.ts, update);
+      const payload = new Payload(data, doc);
       this.emit('change', payload);
     });
-  });
+  };
 
-  oplog.on('delete', (data) => {
+  oplog.on('op', (data) => {
     if (!this.isWatched(data)) return;
 
-    // nothing to query, its been removed
-    const payload = new Payload('delete', data.ns, data.ts, data.o);
+    if (data.op === 'u') return this.u(data);
+
+    // generic events: insert, delete and collection actions like drop
+    const payload = new Payload(data);
     this.emit('change', payload);
   });
 
@@ -79,7 +70,7 @@ Tail.prototype._start = function _start() {
     this.emit('error', err);
   });
 
-  /*istanbul ignore next*/
+  /* istanbul ignore next */
   oplog.on('end', () => {
     this.emit('end');
   });
@@ -122,7 +113,7 @@ function Payload(type, ns, ts, data) {
   this.data = data;
 }
 
-function Update(o, doc) {
-  this.o = o;
+function Payload(log, doc) {
+  this.log = log;
   this.doc = doc;
 }
