@@ -11,6 +11,7 @@ exports.tail = function createTail(config) {
 function Tail(config) {
   this.config = Tail.validate(config);
   this.DB_RGX = new RegExp(`^${this.config.db}\.`);
+  this.isWatchingAllCollections = Tail.isWatchingAllCollections(config);
   this.oplog = null;
   setImmediate(() => this._start());
 }
@@ -91,8 +92,21 @@ Tail.prototype.colname = function colname(data) {
 };
 
 Tail.prototype.isWatched = function isWatched(data) {
+  if (this.isWatchingAllCollections) return true;
+
   const colname = this.colname(data);
-  return this.config.collections.some((name) => name === colname);
+  let watched = this.config.collections.some((name) => name === colname);
+  if (watched) return watched;
+
+  // collection actions eg drop, create, etc?
+
+  const cmdCollection = `${this.config.db}.$cmd`;
+  if (data.ns !== cmdCollection) return false;
+
+  let keys = Object.keys(data.o);
+  return this.config.collections.some((name) => {
+    return keys.some((key) => data.o[key] === name);
+  });
 };
 
 Tail.validate = function validate(config) {
@@ -100,18 +114,17 @@ Tail.validate = function validate(config) {
   assert(config.uri, 'missing uri');
   assert(config.db, 'missing db');
   assert(config.collections, 'missing collections');
+  if (typeof config.collections === 'string') {
+    config.collections = config.collections.split(',');
+  }
   assert(Array.isArray(config.collections), 'collections must be an Array');
   assert(config.collections.length > 0, 'must be at least 1 collection.');
   return config;
 };
 
-/* eslint-disable max-params */
-function Payload(type, ns, ts, data) {
-  this.ts = ts;
-  this.ns = ns;
-  this.type = type;
-  this.data = data;
-}
+Tail.isWatchingAllCollections = function(config) {
+  return config.collections.some((name) => name === '*');
+};
 
 function Payload(log, doc) {
   this.log = log;

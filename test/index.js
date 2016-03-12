@@ -37,6 +37,7 @@ describe('tailor', function() {
       db = _db.db(DB);
       col = db.collection(COL);
       col2 = db.collection('nada');
+      colDrop = db.collection(COL_DROP);
       col.remove({}, () => {
         col2.remove({}, done);
       });
@@ -90,6 +91,14 @@ describe('tailor', function() {
           uri: URI,
           db: DB,
           collections: [COL]
+        });
+      });
+
+      assert.doesNotThrow(function() {
+        tailor.tail({
+          uri: URI,
+          db: DB,
+          collections: 'x,*'
         });
       });
 
@@ -159,13 +168,54 @@ describe('tailor', function() {
         o.once('connected', () => {
           let _id = `updated-${Math.random()}`;
           col.insertOne({ _id: _id }).then(() => {
-            o.once('change', (change) => {
-              assert.equal(_id, change.data._id);
-              assertValidSchema(change);
-              o.destroy(done);
-            });
-            col.updateOne({ _id: _id }, {$set: { n: 9 }}).catch(done);
+            setTimeout(function() {
+              o.once('change', (change) => {
+                assertValidSchema('u', change);
+                o.destroy(done);
+              });
+              col.updateOne({ _id: _id }, {$set: { n: 9 }}).catch(done);
+            }, 200);
           });
+        });
+      });
+
+      it('a watched collection is dropped', function(done) {
+        let o = tailor.tail({
+          uri: URI,
+          db: DB,
+          collections: [COL_DROP]
+        });
+        o.once('error', done);
+        o.once('connected', () => {
+          let _id = `dropme-${Math.random()}`;
+          colDrop.insertOne({ _id: _id }).then(() => {
+            setTimeout(function() {
+              o.once('change', (change) => {
+                assertValidSchema('c', change);
+                o.destroy(done);
+              });
+              colDrop.drop().catch(done);
+            }, 200);
+          });
+        });
+      });
+
+      it('all collections are watched', function(done) {
+        let o = tailor.tail({
+          uri: URI,
+          db: DB,
+          collections: '*'
+        });
+
+        o.once('error', done);
+        o.once('connected', () => {
+          let _id = `inserted-${Math.random()}`;
+          o.once('change', (change) => {
+            assert.equal(_id, change.log.o._id);
+            assertValidSchema('i', change);
+            o.destroy(done);
+          });
+          col.insertOne({ _id: _id }).catch(done);
         });
       });
     });
@@ -252,8 +302,8 @@ describe('tailor', function() {
           col.insertOne({ _id: _id, n: 0 }).then(() => {
             setTimeout(() => {
               o.once('change', (change) => {
-                assert.equal('update', change.type);
-                assert.equal(undefined, change.data.doc);
+                assertValidSchema('u', change);
+                assert.equal(undefined, change.doc);
                 done();
               });
               col.updateOne({ _id: _id }, {$set: { n: 3 }}).catch(done);
