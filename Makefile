@@ -1,6 +1,5 @@
 ENV_VARS := \
-	NODE_ENV=test \
-	MONGO_TEST_URI=mongodb://localhost:27022/?replicaSet=auth
+	NODE_ENV=test
 
 test: mocha lint
 
@@ -22,12 +21,4 @@ test-cov:
 open-cov:
 	open coverage/lcov-report/index.html
 
-test-travis: lint
-	@ $(ENV_VARS) ./node_modules/.bin/mocha $(MOCHA_OPTS) \
-		node_modules/.bin/istanbul cover \
-		./node_modules/.bin/_mocha \
-		--report lcovonly \
-		-- -u exports \
-		--bail
-
-.PHONY: test mocha lint test-cov open-cov test-travis
+.PHONY: test mocha lint test-cov open-cov

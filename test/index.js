@@ -4,8 +4,8 @@ const tailor = require('../');
 const assert = require('assert');
 const mongo = require('mongodb').MongoClient;
 
-const URI = process.env.MONGO_TEST_URI;
-assert(URI, 'missing MONGO_TEST_URI');
+const URI = process.env.MONGO_TAILOR_TEST_URI;
+assert(URI, 'missing MONGO_TAILOR_TEST_URI');
 
 const DB = 'test_mongo_tailor';
 const COL = 'testing';
